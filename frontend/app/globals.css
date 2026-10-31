@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b1020;
+  --background-soft: #11182c;
+  --glass-fill: rgba(255, 255, 255, 0.05);
+  --glass-fill-strong: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-border-strong: rgba(255, 255, 255, 0.18);
+  --text-primary: #f7f9ff;
+  --text-secondary: #a7b0c5;
+  --text-muted: #737d95;
+  --accent: #38bdf8;
+  --accent-foreground: #06131c;
+  --online: #34d399;
+  --working: #fbbf24;
+  --failed: #fb7185;
+  --unknown: #94a3b8;
+  --shadow: rgba(4, 8, 24, 0.35);
+}
+
+:root.light {
+  --background: #eaf1f7;
+  --background-soft: #f4f8fb;
+  --glass-fill: rgba(255, 255, 255, 0.58);
+  --glass-fill-strong: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(91, 116, 142, 0.18);
+  --glass-border-strong: rgba(91, 116, 142, 0.3);
+  --text-primary: #172235;
+  --text-secondary: #526278;
+  --text-muted: #536579;
+  --accent: #0369a1;
+  --accent-foreground: #ffffff;
+  --online: #047857;
+  --working: #92400e;
+  --failed: #be123c;
+  --unknown: #475569;
+  --shadow: rgba(71, 93, 116, 0.14);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-inter);
+}
+
+* { box-sizing: border-box; }
+html { min-height: 100%; }
+body {
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-inter), Arial, sans-serif;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  top: -16rem;
+  right: -10rem;
+  width: 36rem;
+  height: 36rem;
+  pointer-events: none;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.17);
+  filter: blur(90px);
+}
+:root.light body::before { display: none; }
+
+.glass {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  box-shadow: 0 18px 50px var(--shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.glass-hover { transition: transform 180ms ease, border-color 180ms ease, background 180ms ease; }
+.glass-hover:hover { transform: translateY(-2px); background: var(--glass-fill-strong); border-color: var(--glass-border-strong); }
+.glass-dim { opacity: .62; filter: saturate(.65); }
+.glass-dashed { border-style: dashed; border-color: var(--glass-border-strong); background: transparent; }
+
+button, input { font: inherit; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
