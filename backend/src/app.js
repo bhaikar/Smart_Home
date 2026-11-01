@@ -6,6 +6,7 @@ import { mqttClient } from "./mqtt/client.js";
 import { createAiService } from "./ai/ai.service.js";
 import { deviceService } from "./devices/device.service.js";
 import { eventService } from "./events/event.service.js";
+import { mqttInspector } from "./mqtt/debug-inspector.js";
 
 export function createApp() {
   const app = express();
@@ -14,6 +15,11 @@ export function createApp() {
   app.use(express.json());
   const configuredAiService = createAiService({ devices: deviceService, events: eventService });
   app.use("/api", createCommandRouter({ publisher: mqttClient.publishCommand, ai: configuredAiService, devices: deviceService, events: eventService }));
+
+  app.get("/api/debug/mqtt", (_request, response) => {
+    if (process.env.NODE_ENV === "production") return response.status(404).json({ error: "Not found" });
+    response.json({ messages: mqttInspector.list() });
+  });
 
   app.get("/health", (_request, response) => {
     response.json({

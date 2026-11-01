@@ -45,6 +45,53 @@ npm run mock:master -- --offline
 - `--silent` receives commands but sends no ACK, allowing command timeout handling to be tested.
 - `--offline` publishes an offline availability message and does not start heartbeats or simulated events.
 
+## Development tools
+
+The backend includes three development tools:
+
+1. **Raw MQTT inspector** (`GET /api/debug/mqtt`): an in-memory log of all MQTT messages, with validation results and handler names. Disabled in production.
+2. **Contract checker** (`npm run contract:check -- <file.json> [topic]`): validates messages against the hardware contract and reports routing/treatment. Use it to check samples, test messages, and debug the contract.
+3. **Test suite** (`npm test`): runs the full test suite, including contract-check samples and MQTT inspector validation.
+
+The inspector and contract checker are disabled in production. The test suite includes coverage for the contract checker and the inspector.
+
+## What the mock does not test
+
+The mock does not test real ESP32-S3 firmware, ESP-NOW forwarding, slave-device wiring, pump safety behavior, servo positions, RFID hardware, camera hardware, power loss, reboot fail-safe behavior, actual sensor readings, broker TLS certificate deployment, or real hardware timing. It also does not prove that the production master uses the exact same message fields beyond the simulated contract. Those require integration testing with the hardware developer's real master and slaves.
+
+All application state and mock state are held in memory and disappear when the process stops. No database or data files are written.
+
+The mock master is a simulated MQTT participant for local development. It is clearly labeled `[MOCK]` in its source header and console output. It is **not real hardware** and must not be used as evidence that the ESP32-S3 master or slave boards work.
+
+Run it in a second terminal, from `backend/`:
+
+```powershell
+npm run mock:master
+```
+
+The mock connects to the same broker settings as the backend and:
+
+- Publishes master `ONLINE` heartbeat messages every 10 seconds.
+- Subscribes to `homemate/001/master/command`.
+- Sends an ACK after one second.
+- Simulates water-pump and fan state, then publishes matching STATUS messages.
+- Decrements pump `remainingSeconds` every second and turns the simulated pump off at zero.
+- **TBC mock behavior:** fan timers decrement `remainingSeconds` every second and switch the simulated fan to `OFF` at zero. This is not tested against real hardware.
+- Emits simulated RFID granted or denied events periodically.
+- Publishes `OFFLINE` during graceful shutdown.
+
+Useful test modes:
+
+```powershell
+npm run mock:master -- --fail
+npm run mock:master -- --silent
+npm run mock:master -- --offline
+```
+
+- `--fail` returns a simulated `FAILED` result for commands.
+- `--silent` receives commands but sends no ACK, allowing command timeout handling to be tested.
+- `--offline` publishes an offline availability message and does not start heartbeats or simulated events.
+
 ## What the mock does not test
 
 The mock does not test real ESP32-S3 firmware, ESP-NOW forwarding, slave-device wiring, pump safety behavior, servo positions, RFID hardware, camera hardware, power loss, reboot fail-safe behavior, actual sensor readings, broker TLS certificate deployment, or real hardware timing. It also does not prove that the production master uses the exact same message fields beyond the simulated contract. Those require integration testing with the hardware developer's real master and slaves.

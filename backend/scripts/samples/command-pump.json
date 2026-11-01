@@ -1,0 +1,1 @@
+{"version":1,"messageType":"COMMAND","commandId":"cmd_sample_pump","target":"slave_2","device":"water_pump","action":"SET","parameters":{"power":true,"durationSeconds":1200}}

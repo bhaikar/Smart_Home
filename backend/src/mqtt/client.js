@@ -5,6 +5,7 @@ import { commandService } from "../commands/command.service.js";
 import { deviceService } from "../devices/device.service.js";
 import { mqttHandlers } from "./handlers.js";
 import { topics } from "./contract.js";
+import { mqttInspector as defaultInspector } from "./debug-inspector.js";
 
 export function createMqttClient({
   brokerUrl = config.MQTT_BROKER_URL,
@@ -14,10 +15,12 @@ export function createMqttClient({
   devices = deviceService,
   handlers = mqttHandlers,
   mqttConnect = mqtt.connect,
-  clientId = `homemate-backend-${process.pid}`
+  clientId = `homemate-backend-${process.pid}`,
+  inspector
 } = {}) {
   let connectionState = "DISCONNECTED";
   let lastMessageAt;
+  const mqttInspector = inspector ?? defaultInspector;
   const subscribedTopics = [topics.result, topics.deviceStatus, topics.deviceEvents, topics.masterAvailability];
   const client = mqttConnect(brokerUrl, {
     clientId,
@@ -66,13 +69,16 @@ export function createMqttClient({
       // The handler logs malformed JSON; keep this transport log safe and concise.
     }
     console.log(`MQTT ${topic} ${messageType}`);
+    let handler = "unrouted";
     try {
-      if (topic === topics.result) handlers.handleResult(payload);
-      else if (topic === topics.deviceStatus) handlers.handleStatus(payload);
-      else if (topic === topics.deviceEvents) handlers.handleEvent(payload);
-      else if (topic === topics.masterAvailability) handlers.handleAvailability(payload);
+      if (topic === topics.result) { handler = "handleResult"; handlers.handleResult(payload); }
+      else if (topic === topics.deviceStatus) { handler = "handleStatus"; handlers.handleStatus(payload); }
+      else if (topic === topics.deviceEvents) { handler = "handleEvent"; handlers.handleEvent(payload); }
+      else if (topic === topics.masterAvailability) { handler = "handleAvailability"; handlers.handleAvailability(payload); }
     } catch (error) {
       console.error("MQTT message handler failed", error);
+    } finally {
+      mqttInspector.record({ topic, payload, handler });
     }
   });
 

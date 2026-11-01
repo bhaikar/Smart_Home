@@ -7,7 +7,9 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test",
-    "mock:master": "node scripts/mock-master.js"
+    "mock:master": "node scripts/mock-master.js",
+    "contract:check": "node scripts/contract-check.js",
+    "preflight": "node scripts/preflight.js"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",

@@ -1,0 +1,1 @@
+{"version":1,"messageType":"STATUS","commandId":"cmd_sample_fan","slaveId":"slave_3","device":"fan","state":{"level":"LOW","remainingSeconds":1799,"angle":45}}

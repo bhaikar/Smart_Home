@@ -12,6 +12,13 @@ const flags = new Set(process.argv.slice(2));
 const shouldFail = flags.has("--fail");
 const shouldStaySilent = flags.has("--silent");
 const shouldPublishOffline = flags.has("--offline");
+const shouldDuplicate = flags.has("--duplicate");
+const shouldSlow = flags.has("--slow");
+const shouldLate = flags.has("--late");
+const shouldGarbage = flags.has("--garbage");
+const shouldNoCommandId = flags.has("--no-commandid");
+const shouldNoHeartbeat = flags.has("--no-heartbeat");
+const slaveOffline = flags.has("--slave-offline=slave_2") ? "slave_2" : null;
 const clientId = `homemate-mock-master-${process.pid}`;
 
 const pump = { power: false, remainingSeconds: 0 };
@@ -37,12 +44,19 @@ const client = mqtt.connect(process.env.MQTT_BROKER_URL, {
 });
 
 function publish(topic, payload) {
+  if (shouldPublishOffline || shouldStaySilent) return;
   client.publish(topic, JSON.stringify(payload), { qos: 1, retain: false }, (error) => {
     if (error) console.error("[MOCK] publish failed:", error.message);
   });
+  if (shouldDuplicate) {
+    setTimeout(() => {
+      client.publish(topic, JSON.stringify(payload), { qos: 1, retain: false });
+    }, 100);
+  }
 }
 
 function availability(status) {
+  if (shouldNoHeartbeat) return;
   publish(MQTT_TOPICS.masterAvailability, {
     version: 1,
     messageType: "HEARTBEAT",
@@ -53,28 +67,33 @@ function availability(status) {
 }
 
 function publishPumpStatus(commandId) {
-  publish(MQTT_TOPICS.deviceStatus, {
+  if (slaveOffline === "slave_2") return;
+  const message = {
     version: 1,
     messageType: "STATUS",
-    ...(commandId ? { commandId } : {}),
+    ...(shouldNoCommandId ? {} : { commandId }),
     slaveId: "slave_2",
     device: "water_pump",
     state: { ...pump }
-  });
+  };
+  publish(MQTT_TOPICS.deviceStatus, message);
 }
 
 function publishFanStatus(commandId) {
-  publish(MQTT_TOPICS.deviceStatus, {
+  if (slaveOffline === "slave_3") return;
+  const message = {
     version: 1,
     messageType: "STATUS",
-    ...(commandId ? { commandId } : {}),
+    ...(shouldNoCommandId ? {} : { commandId }),
     slaveId: "slave_3",
     device: "fan",
     state: { ...fan }
-  });
+  };
+  publish(MQTT_TOPICS.deviceStatus, message);
 }
 
 function publishLockStatus() {
+  if (slaveOffline === "slave_1") return;
   publish(MQTT_TOPICS.deviceStatus, {
     version: 1,
     messageType: "STATUS",
@@ -89,6 +108,19 @@ function publishAllStatus() {
   publishPumpStatus();
   publishFanStatus();
   publishLockStatus();
+}
+
+function publishGarbage() {
+  if (!shouldGarbage || Math.random() > 0.3) return;
+  const garbage = [
+    "{",
+    "{\"version\":1",
+    "{\"messageType\":\"STATUS\",\"state\":{\"power\":true}}",
+    "{\"messageType\":\"STATUS\",\"state\":{\"power\":true,\"remainingSeconds\":\"not a number\"}}",
+    "{\"messageType\":\"STATUS\",\"state\":{\"power\":true,\"remainingSeconds\":1200,\"extraField\":true}}",
+    "{\"messageType\":\"STATUS\",\"state\":{\"power\":true,\"remainingSeconds\":1200}}".repeat(1000)
+  ];
+  client.publish(MQTT_TOPICS.deviceStatus, garbage[Math.floor(Math.random() * garbage.length)], { qos: 1, retain: false });
 }
 
 function handleCommand(raw) {
@@ -135,12 +167,12 @@ function handleCommand(raw) {
       pump.power = parameters.power;
       pump.remainingSeconds = parameters.power ? parameters.durationSeconds : 0;
       lastPumpCommandId = command.commandId;
-      publishPumpStatus(command.commandId);
+      setTimeout(() => publishPumpStatus(command.commandId), shouldLate ? 20_000 : shouldSlow ? 8_000 : 3_000);
     } else if (command.device === "fan" && command.target === "slave_3") {
       fan.level = parameters.level;
       fan.remainingSeconds = parameters.durationSeconds ?? 0;
       lastFanCommandId = command.commandId;
-      publishFanStatus(command.commandId);
+      setTimeout(() => publishFanStatus(command.commandId), shouldLate ? 20_000 : shouldSlow ? 8_000 : 3_000);
     } else {
       publish(MQTT_TOPICS.result, {
         version: 1,
@@ -151,7 +183,7 @@ function handleCommand(raw) {
         message: "[MOCK] Unsupported simulated target"
       });
     }
-  }, 1000);
+  }, shouldSlow ? 3_000 : 1_000);
 }
 
 client.on("connect", () => {
@@ -169,10 +201,12 @@ client.on("connect", () => {
     }
     availability("ONLINE");
     publishAllStatus();
-    heartbeatTimer = setInterval(() => {
-      availability("ONLINE");
-      publishAllStatus();
-    }, 10_000);
+    if (!shouldNoHeartbeat) {
+      heartbeatTimer = setInterval(() => {
+        availability("ONLINE");
+        publishAllStatus();
+      }, 10_000);
+    }
   });
 });
 
@@ -204,6 +238,7 @@ pumpTimer = setInterval(() => {
     console.log("[MOCK] fan timer STATUS — not real hardware");
     publishFanStatus(lastFanCommandId);
   }
+  publishGarbage();
 }, 1000);
 
 if (!shouldPublishOffline) {

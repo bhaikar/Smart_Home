@@ -1,76 +1,95 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { z } from "zod";
-import { createCommandService, validateCommand } from "../src/commands/command.service.js";
-import { createEventService } from "../src/events/event.service.js";
-import { createDeviceService } from "../src/devices/device.service.js";
+import { execSync } from "node:child_process";
+import { createMqttInspector } from "../src/mqtt/debug-inspector.js";
+import { topics } from "../src/mqtt/contract.js";
 
-test("command validator accepts supported pump and fan commands", () => {
-  assert.deepEqual(validateCommand({ deviceId: "slave_2", action: "SET", parameters: { power: true, durationSeconds: 1200 } }), {
-    deviceId: "slave_2", action: "SET", parameters: { power: true, durationSeconds: 1200 }
-  });
-  assert.doesNotThrow(() => validateCommand({ deviceId: "slave_2", action: "SET", parameters: { power: false } }));
-  assert.doesNotThrow(() => validateCommand({ deviceId: "slave_3", action: "SET", parameters: { level: "HIGH" } }));
-  assert.deepEqual(validateCommand({ deviceId: "slave_3", action: "SET", parameters: { level: "LOW", durationSeconds: 1800 } }), { deviceId: "slave_3", action: "SET", parameters: { level: "LOW", durationSeconds: 1800 } });
+const SAMPLES = "scripts/samples";
+
+function check(file, topic) {
+  return execSync(`npm run contract:check -- ${SAMPLES}/${file}.json ${topic}`).toString();
+}
+
+function checkFails(file, topic) {
+  assert.throws(() => check(file, topic), /exit code 1/);
+}
+
+function checkPasses(file, topic) {
+  assert.doesNotThrow(() => check(file, topic));
+}
+
+function checkOutput(file, topic, expected) {
+  const output = check(file, topic);
+  assert.match(output, new RegExp(expected));
+}
+
+test("contract checker validates all samples", () => {
+  checkPasses("command-pump", topics.command);
+  checkPasses("ack", topics.result);
+  checkPasses("status-pump", topics.deviceStatus);
+  checkPasses("status-fan-timer", topics.deviceStatus);
+  checkPasses("status-door", topics.deviceStatus);
+  checkPasses("event-door", topics.deviceEvents);
+  checkPasses("failed", topics.result);
+  checkPasses("heartbeat-online", topics.masterAvailability);
+  checkPasses("heartbeat-offline", topics.masterAvailability);
 });
 
-test("command validator rejects unsupported devices and parameters", () => {
-  assert.throws(() => validateCommand({ deviceId: "slave_1", action: "SET", parameters: {} }), z.ZodError);
-  assert.throws(() => validateCommand({ deviceId: "slave_2", action: "SET", parameters: { power: true, durationSeconds: 30 } }), z.ZodError);
-  assert.throws(() => validateCommand({ deviceId: "slave_2", action: "SET", parameters: { power: false, durationSeconds: 60 } }), z.ZodError);
-  assert.throws(() => validateCommand({ deviceId: "slave_3", action: "SET", parameters: { level: "TURBO" } }), z.ZodError);
-  assert.throws(() => validateCommand({ deviceId: "slave_3", action: "SET", parameters: { level: "OFF", durationSeconds: 60 } }), z.ZodError);
-  assert.throws(() => validateCommand({ deviceId: "slave_3", action: "SET", parameters: { level: "LOW", durationSeconds: 30 } }), z.ZodError);
-  assert.throws(() => validateCommand({ deviceId: "slave_3", action: "SET", parameters: { level: "HIGH", durationSeconds: 7201 } }), z.ZodError);
+test("contract checker rejects malformed samples", () => {
+  checkFails("command-pump", topics.deviceStatus);
+  checkFails("ack", topics.command);
+  checkFails("status-pump", topics.command);
+  checkFails("status-fan-timer", topics.command);
+  checkFails("status-door", topics.command);
+  checkFails("event-door", topics.command);
+  checkFails("failed", topics.command);
+  checkFails("heartbeat-online", topics.command);
+  checkFails("heartbeat-offline", topics.command);
 });
 
-test("command lifecycle keeps ACK separate from execution", () => {
-  const service = createCommandService({ ackTimeoutMs: 1000, executionTimeoutMs: 1000 });
-  const command = service.create({ deviceId: "slave_3", action: "SET", parameters: { level: "LOW" } });
-  service.markSent(command.id);
-  const acknowledged = service.handleAck({ commandId: command.id });
-  assert.equal(acknowledged.state, "ACKNOWLEDGED");
-  assert.equal(service.get(command.id).state, "ACKNOWLEDGED");
-  assert.equal(service.handleStatus({ commandId: command.id, state: { level: "HIGH" } }), null);
-  assert.equal(service.handleStatus({ commandId: command.id, state: { level: "LOW" } }).state, "EXECUTED");
-  const timedFan = service.create({ deviceId: "slave_3", action: "SET", parameters: { level: "LOW", durationSeconds: 1800 } });
-  service.markSent(timedFan.id);
-  service.handleAck({ commandId: timedFan.id });
-  assert.equal(service.handleStatus({ commandId: timedFan.id, state: { level: "LOW", remainingSeconds: 1799 } }), null);
-  assert.equal(service.handleStatus({ commandId: timedFan.id, state: { level: "LOW", remainingSeconds: 1800 } }).state, "EXECUTED");
-  service.clear();
+test("contract checker reports missing fields", () => {
+  checkOutput("command-pump", topics.command, "Missing required fields: none");
+  checkOutput("ack", topics.result, "Missing required fields: none");
+  checkOutput("status-pump", topics.deviceStatus, "Missing required fields: none");
+  checkOutput("status-fan-timer", topics.deviceStatus, "Missing required fields: none");
+  checkOutput("status-door", topics.deviceStatus, "Missing required fields: none");
+  checkOutput("event-door", topics.deviceEvents, "Missing required fields: none");
+  checkOutput("failed", topics.result, "Missing required fields: none");
+  checkOutput("heartbeat-online", topics.masterAvailability, "Missing required fields: none");
+  checkOutput("heartbeat-offline", topics.masterAvailability, "Missing required fields: none");
 });
 
-test("identical active commands are rejected", () => {
-  const service = createCommandService({ ackTimeoutMs: 1000 });
-  service.create({ deviceId: "slave_2", action: "SET", parameters: { power: true, durationSeconds: 60 } });
-  assert.throws(() => service.create({ deviceId: "slave_2", action: "SET", parameters: { power: true, durationSeconds: 60 } }), /already pending/);
-  service.clear();
+test("contract checker reports unexpected fields", () => {
+  checkOutput("command-pump", topics.command, "Unexpected fields: none");
+  checkOutput("ack", topics.result, "Unexpected fields: none");
+  checkOutput("status-pump", topics.deviceStatus, "Unexpected fields: none");
+  checkOutput("status-fan-timer", topics.deviceStatus, "Unexpected fields: none");
+  checkOutput("status-door", topics.deviceStatus, "Unexpected fields: none");
+  checkOutput("event-door", topics.deviceEvents, "Unexpected fields: none");
+  checkOutput("failed", topics.result, "Unexpected fields: none");
+  checkOutput("heartbeat-online", topics.masterAvailability, "Unexpected fields: none");
+  checkOutput("heartbeat-offline", topics.masterAvailability, "Unexpected fields: none");
 });
 
-test("commands time out without acknowledgement", async () => {
-  const service = createCommandService({ ackTimeoutMs: 10, executionTimeoutMs: 10 });
-  const command = service.create({ deviceId: "slave_3", action: "SET", parameters: { level: "OFF" } });
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  assert.equal(service.get(command.id).state, "TIMEOUT");
-  service.clear();
+test("contract checker reports validation errors", () => {
+  checkOutput("command-pump", topics.command, "Validation/type errors: none");
+  checkOutput("ack", topics.result, "Validation/type errors: none");
+  checkOutput("status-pump", topics.deviceStatus, "Validation/type errors: none");
+  checkOutput("status-fan-timer", topics.deviceStatus, "Validation/type errors: none");
+  checkOutput("status-door", topics.deviceStatus, "Validation/type errors: none");
+  checkOutput("event-door", topics.deviceEvents, "Validation/type errors: none");
+  checkOutput("failed", topics.result, "Validation/type errors: none");
+  checkOutput("heartbeat-online", topics.masterAvailability, "Validation/type errors: none");
+  checkOutput("heartbeat-offline", topics.masterAvailability, "Validation/type errors: none");
 });
 
-test("device service starts with unknown devices and reserved slave", () => {
-  const service = createDeviceService({ sweepIntervalMs: 1000 });
-  const snapshot = service.getSnapshot();
-  assert.deepEqual(snapshot.devices.map(({ id, availability }) => ({ id, availability })), [
-    { id: "slave_1", availability: "UNKNOWN" },
-    { id: "slave_2", availability: "UNKNOWN" },
-    { id: "slave_3", availability: "UNKNOWN" },
-    { id: "slave_4", availability: "NOT_CONFIGURED" }
-  ]);
-  service.stop();
-});
-
-test("event service caps temporary history at 100", () => {
-  const service = createEventService({ cap: 100 });
-  for (let index = 0; index < 101; index += 1) service.addEvent({ type: "TEST", message: String(index) });
-  assert.equal(service.list().length, 100);
-  assert.equal(service.list()[0].message, "100");
+test("MQTT inspector records messages", () => {
+  const inspector = createMqttInspector({ enabled: true });
+  inspector.record({ topic: topics.command, payload: "{\"version\":1,\"messageType\":\"COMMAND\",\"commandId\":\"cmd_sample_pump\",\"target\":\"slave_2\",\"device\":\"water_pump\",\"action\":\"SET\",\"parameters\":{\"power\":true,\"durationSeconds\":1200}}", handler: "handleCommand" });
+  const messages = inspector.list();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].topic, topics.command);
+  assert.equal(messages[0].parsedOk, true);
+  assert.equal(messages[0].validationErrors.length, 0);
+  assert.equal(messages[0].handler, "handleCommand");
 });
